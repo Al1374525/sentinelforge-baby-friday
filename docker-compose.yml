@@ -1,0 +1,8 @@
+version: "3.8"
+services:
+  brain:
+    build: ./brain
+    ports:
+      - "8000:8000"
+    volumes:
+      - C:\Users\alber\.kube:/root/.kube:ro
