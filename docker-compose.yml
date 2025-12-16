@@ -1,8 +1,50 @@
 version: "3.8"
+
 services:
-  brain:
-    build: ./brain
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
     ports:
       - "8000:8000"
     volumes:
       - C:\Users\alber\.kube:/root/.kube:ro
+      - ./backend:/app:ro  # Mount for development
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_URL=http://ollama:11434
+    depends_on:
+      - ollama
+    networks:
+      - sentinelforge
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    networks:
+      - sentinelforge
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - sentinelforge
+
+volumes:
+  ollama_data:
+
+networks:
+  sentinelforge:
+    driver: bridge
