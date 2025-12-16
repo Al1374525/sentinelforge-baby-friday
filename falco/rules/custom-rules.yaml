@@ -1,0 +1,140 @@
+# SentinelForge Custom Falco Rules
+# Enhanced threat detection rules for Kubernetes environments
+
+- rule: Reverse shell detected
+  desc: Detect reverse shell attempts in containers
+  condition: >
+    spawned_process and container and
+    (proc.name in (shell_binaries) or proc.name in (shell_interpreters)) and
+    (proc.cmdline contains "bash -i" or
+     proc.cmdline contains "/bin/sh" or
+     proc.cmdline contains "nc " or
+     proc.cmdline contains "netcat" or
+     proc.cmdline contains "python -c" or
+     proc.cmdline contains "perl -e")
+  output: >
+    Reverse shell detected (user=%user.name user_loginuid=%user.loginuid %container.info
+    shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline terminal=%proc.tty
+    container_id=%container.id image=%container.image.repository)
+  priority: CRITICAL
+  tags: [container, shell, mitre_execution]
+
+- rule: Suspicious network activity
+  desc: Detect suspicious network connections from containers
+  condition: >
+    evt.type = connect and evt.dir = < and container and
+    (fd.sip != "127.0.0.1" and fd.sip != "::1") and
+    (fd.dport in (suspicious_ports) or
+     fd.sip in (suspicious_ips))
+  output: >
+    Suspicious network connection (user=%user.name %container.info
+    connection=%fd.name laddr=%fd.laddrproto raddr=%fd.raddrproto
+    %evt.type %evt.res)
+  priority: WARNING
+  tags: [container, network, mitre_exfiltration]
+
+- rule: Privilege escalation attempt
+  desc: Detect privilege escalation attempts
+  condition: >
+    evt.type = setuid or evt.type = setgid and
+    evt.arg.uid != 0 and
+    evt.arg.uid != %user.uid and
+    not proc.name in (privilege_escalation_binaries)
+  output: >
+    Privilege escalation attempt (user=%user.name %container.info
+    process=%proc.name command=%proc.cmdline %evt.type)
+  priority: ALERT
+  tags: [container, mitre_privilege_escalation]
+
+- rule: Sensitive file access
+  desc: Detect access to sensitive files
+  condition: >
+    evt.type = open and evt.dir = < and container and
+    (fd.name contains "/etc/passwd" or
+     fd.name contains "/etc/shadow" or
+     fd.name contains "/root/.ssh" or
+     fd.name contains "secret" or
+     fd.name contains "credential" or
+     fd.name contains "password")
+  output: >
+    Sensitive file accessed (user=%user.name %container.info
+    file=%fd.name process=%proc.name command=%proc.cmdline)
+  priority: WARNING
+  tags: [container, file, mitre_credential_access]
+
+- rule: Container escape attempt
+  desc: Detect container escape attempts
+  condition: >
+    evt.type = open and evt.dir = < and container and
+    (fd.name contains "/proc/sys/kernel" or
+     fd.name contains "/sys" or
+     fd.name contains "/dev" or
+     proc.name = "mount" or
+     proc.cmdline contains "chroot")
+  output: >
+    Container escape attempt detected (user=%user.name %container.info
+    process=%proc.name command=%proc.cmdline file=%fd.name)
+  priority: CRITICAL
+  tags: [container, escape, mitre_defense_evasion]
+
+- rule: Unauthorized package installation
+  desc: Detect unauthorized package installations
+  condition: >
+    spawned_process and container and
+    (proc.name in (package_mgmt_binaries) or
+     proc.cmdline contains "apt-get" or
+     proc.cmdline contains "yum" or
+     proc.cmdline contains "pip install" or
+     proc.cmdline contains "npm install")
+  output: >
+    Unauthorized package installation (user=%user.name %container.info
+    process=%proc.name command=%proc.cmdline)
+  priority: NOTICE
+  tags: [container, package]
+
+- rule: Cryptocurrency mining detected
+  desc: Detect cryptocurrency mining activity
+  condition: >
+    spawned_process and container and
+    (proc.name in (mining_binaries) or
+     proc.cmdline contains "minerd" or
+     proc.cmdline contains "xmrig" or
+     proc.cmdline contains "cpuminer")
+  output: >
+    Cryptocurrency mining detected (user=%user.name %container.info
+    process=%proc.name command=%proc.cmdline)
+  priority: ALERT
+  tags: [container, mining, mitre_resource_development]
+
+- rule: Process injection attempt
+  desc: Detect process injection attempts
+  condition: >
+    evt.type = ptrace and container and
+    evt.arg.request = PTRACE_POKETEXT
+  output: >
+    Process injection attempt (user=%user.name %container.info
+    process=%proc.name target=%proc.pname)
+  priority: ALERT
+  tags: [container, injection, mitre_defense_evasion]
+
+# Lists for rule conditions
+- list: shell_binaries
+  items: [sh, bash, zsh, csh, ksh, fish]
+
+- list: shell_interpreters
+  items: [python, perl, ruby, lua]
+
+- list: suspicious_ports
+  items: [4444, 5555, 6666, 6667, 31337, 12345, 54321]
+
+- list: suspicious_ips
+  items: []
+
+- list: privilege_escalation_binaries
+  items: [sudo, su, pkexec, doas]
+
+- list: package_mgmt_binaries
+  items: [apt, apt-get, yum, dnf, pacman, pip, npm, gem]
+
+- list: mining_binaries
+  items: [minerd, xmrig, cpuminer, ccminer]
