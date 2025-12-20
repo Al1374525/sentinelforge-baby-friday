@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from typing import List, Optional
 from datetime import datetime
 from app.models.threat_event import ThreatEvent, ThreatSeverity, ThreatType
-from app.storage import threats_db
+from app.storage import get_threats_db
 
 router = APIRouter()
 
@@ -18,6 +18,7 @@ async def list_threats(
     limit: int = Query(100, ge=1, le=1000)
 ):
     """List all threats with optional filtering"""
+    threats_db = get_threats_db()
     filtered = threats_db
     
     if severity:
@@ -36,6 +37,7 @@ async def get_threat(threat_id: str):
     from uuid import UUID
     threat_id_uuid = UUID(threat_id)
     
+    threats_db = get_threats_db()
     for threat in threats_db:
         if threat.id == threat_id_uuid:
             return threat
@@ -52,10 +54,31 @@ async def resolve_threat(threat_id: str):
     
     threat_id_uuid = UUID(threat_id)
     
+    # Update in database if using database
+    from app.storage import USE_DATABASE
+    if USE_DATABASE:
+        from app.database.connection import SessionLocal
+        from app.database.models import ThreatEventDB
+        db = SessionLocal()
+        try:
+            threat_db = db.query(ThreatEventDB).filter(ThreatEventDB.id == threat_id_uuid).first()
+            if threat_db:
+                threat_db.resolved = True
+                threat_db.resolved_at = datetime.utcnow()
+                db.commit()
+                return {"status": "resolved", "threat_id": str(threat_db.id)}
+        finally:
+            db.close()
+    
+    # Fallback to in-memory
+    threats_db = get_threats_db()
     for threat in threats_db:
         if threat.id == threat_id_uuid:
             threat.resolved = True
             threat.resolved_at = datetime.utcnow()
+            # Update in storage
+            from app.storage import add_threat
+            add_threat(threat)
             return {"status": "resolved", "threat_id": str(threat.id)}
     
     raise HTTPException(status_code=404, detail="Threat not found")

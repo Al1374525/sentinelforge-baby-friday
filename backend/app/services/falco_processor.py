@@ -6,6 +6,9 @@ from typing import Optional, Dict, Any
 from app.models.threat_event import ThreatEvent, ThreatSeverity, ThreatType
 from app.storage import threats_db
 from app.api.stream import manager
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class FalcoProcessor:
@@ -26,12 +29,12 @@ class FalcoProcessor:
     # Keyword-based threat type detection
     THREAT_KEYWORDS = {
         ThreatType.REVERSE_SHELL: ["reverse shell", "nc ", "netcat", "bash -i", "/bin/sh", "shell"],
-        ThreatType.PRIVILEGE_ESCALATION: ["sudo", "su ", "setuid", "setgid", "capabilities"],
+        ThreatType.PRIVILEGE_ESCALATION: ["sudo", "su ", "setuid", "setgid", "capabilities", "privilege escalation"],
         ThreatType.UNAUTHORIZED_ACCESS: ["unauthorized", "forbidden", "access denied"],
         ThreatType.MALICIOUS_PROCESS: ["malware", "virus", "trojan", "backdoor"],
-        ThreatType.NETWORK_ANOMALY: ["port scan", "brute force", "ddos"],
-        ThreatType.FILE_ANOMALY: ["sensitive file", "password", "secret", "credential"],
-        ThreatType.CONTAINER_ESCAPE: ["container escape", "host mount", "privileged"]
+        ThreatType.NETWORK_ANOMALY: ["port scan", "brute force", "ddos", "suspicious network"],
+        ThreatType.FILE_ANOMALY: ["sensitive file", "password", "secret", "credential", "/etc/passwd", "/etc/shadow"],
+        ThreatType.CONTAINER_ESCAPE: ["container escape", "host mount", "privileged", "escape attempt"]
     }
     
     async def process_event(self, event: Dict[str, Any]) -> Optional[ThreatEvent]:
@@ -88,7 +91,8 @@ class FalcoProcessor:
             )
             
             # Store threat
-            threats_db.append(threat)
+            from app.storage import add_threat
+            add_threat(threat)
             
             # Broadcast to WebSocket clients
             await manager.broadcast({
@@ -100,12 +104,25 @@ class FalcoProcessor:
                 "description": threat.description[:100]
             })
             
-            print(f"🔍 Threat detected: {threat.threat_type.value} in {threat.source_pod} (severity: {threat.severity.value})")
+            logger.info(
+                "Threat detected",
+                extra={
+                    "threat_id": str(threat.id),
+                    "threat_type": threat.threat_type.value,
+                    "severity": threat.severity.value,
+                    "source_pod": threat.source_pod,
+                    "source_namespace": threat.source_namespace
+                }
+            )
             
             return threat
         
         except Exception as e:
-            print(f"❌ Error processing Falco event: {e}")
+            logger.error(
+                "Error processing Falco event",
+                extra={"error": str(e)},
+                exc_info=True
+            )
             return None
     
     def _detect_threat_type(self, output: str, rule: str) -> ThreatType:

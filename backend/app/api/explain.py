@@ -14,11 +14,12 @@ async def explain_threat(threat_id: str):
     Get human-readable explanation of a threat
     Uses LLM to generate FRIDAY-style explanations
     """
-    from app.storage import threats_db
+    from app.storage import get_threats_db
     
     threat_id_uuid = UUID(threat_id)
     
     # Find threat
+    threats_db = get_threats_db()
     threat = None
     for t in threats_db:
         if t.id == threat_id_uuid:

@@ -5,6 +5,9 @@ Supports both cloud APIs (OpenAI/Anthropic) and Ollama
 import os
 from typing import Optional
 from app.models.threat_event import ThreatEvent
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class LLMService:
@@ -22,7 +25,7 @@ class LLMService:
             # Check if we have API keys or Ollama available
             if self.provider in ["openai", "anthropic"] and self.api_key:
                 self.initialized = True
-                print(f"✅ LLM Service initialized ({self.provider})")
+                logger.info(f"LLM Service initialized ({self.provider})")
             elif self.provider == "ollama":
                 # Try to connect to Ollama
                 import httpx
@@ -30,13 +33,13 @@ class LLMService:
                     response = await client.get(f"{self.ollama_url}/api/tags", timeout=5.0)
                     if response.status_code == 200:
                         self.initialized = True
-                        print("✅ LLM Service initialized (Ollama)")
+                        logger.info("LLM Service initialized (Ollama)")
                     else:
-                        print("⚠️  Ollama not available, LLM service in mock mode")
+                        logger.warning("Ollama not available, LLM service in mock mode")
             else:
-                print("⚠️  No LLM provider configured, using template-based explanations")
+                logger.warning("No LLM provider configured, using template-based explanations")
         except Exception as e:
-            print(f"⚠️  Error initializing LLM service: {e}")
+            logger.error(f"Error initializing LLM service: {e}", exc_info=True)
             self.initialized = False
     
     async def explain_threat(self, threat: ThreatEvent) -> str:
@@ -58,7 +61,7 @@ class LLMService:
             else:
                 return self._template_explanation(threat)
         except Exception as e:
-            print(f"⚠️  Error generating LLM explanation: {e}")
+            logger.error(f"Error generating LLM explanation: {e}", exc_info=True)
             return self._template_explanation(threat)
     
     async def _explain_openai(self, threat: ThreatEvent) -> str:

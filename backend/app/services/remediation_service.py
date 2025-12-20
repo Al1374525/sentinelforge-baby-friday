@@ -7,9 +7,9 @@ from kubernetes import client, config
 from app.models.threat_event import ThreatEvent
 from app.models.remediation_action import RemediationAction
 from app.storage import actions_db
-import logging
+from app.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RemediationService:
@@ -25,10 +25,9 @@ class RemediationService:
             config.load_kube_config()
             self.k8s_client = client.CoreV1Api()
             self.initialized = True
-            print("✅ Remediation Service initialized (Kubernetes client)")
+            logger.info("Remediation Service initialized (Kubernetes client)")
         except Exception as e:
-            print(f"⚠️  Kubernetes client not available: {e}")
-            print("   Running in simulated mode")
+            logger.warning(f"Kubernetes client not available: {e}, running in simulated mode")
             self.initialized = False
     
     async def execute_action(self, action: RemediationAction, threat: ThreatEvent):
@@ -62,12 +61,28 @@ class RemediationService:
             action.success = success
             
             # Store action
-            actions_db.append(action)
+            from app.storage import add_action
+            add_action(action)
             
             if success:
-                print(f"✅ Action executed: {action.action_type.value} for threat {threat.id}")
+                logger.info(
+                    "Action executed successfully",
+                    extra={
+                        "action_id": str(action.id),
+                        "action_type": action.action_type.value,
+                        "threat_id": str(threat.id)
+                    }
+                )
             else:
-                print(f"❌ Action failed: {action.action_type.value} for threat {threat.id}")
+                logger.error(
+                    "Action execution failed",
+                    extra={
+                        "action_id": str(action.id),
+                        "action_type": action.action_type.value,
+                        "threat_id": str(threat.id),
+                        "error": action.error_message
+                    }
+                )
         
         except Exception as e:
             logger.error(f"Error executing action: {e}")
@@ -78,7 +93,7 @@ class RemediationService:
     async def _terminate_pod(self, pod_name: str, namespace: str) -> bool:
         """Terminate a pod"""
         if not self.initialized or not self.k8s_client:
-            print(f"   [SIMULATED] Would terminate pod {pod_name} in namespace {namespace}")
+            logger.info(f"[SIMULATED] Would terminate pod {pod_name} in namespace {namespace}")
             return True
         
         try:
@@ -95,7 +110,7 @@ class RemediationService:
     async def _isolate_pod(self, pod_name: str, namespace: str) -> bool:
         """Isolate pod using network policy"""
         if not self.initialized or not self.k8s_client:
-            print(f"   [SIMULATED] Would isolate pod {pod_name} in namespace {namespace}")
+            logger.info(f"[SIMULATED] Would isolate pod {pod_name} in namespace {namespace}")
             return True
         
         try:
@@ -128,7 +143,15 @@ class RemediationService:
     
     async def _send_alert(self, threat: ThreatEvent) -> bool:
         """Send alert (for now, just log)"""
-        print(f"🚨 ALERT: {threat.severity.value.upper()} threat detected: {threat.description[:100]}")
+        logger.warning(
+            "ALERT: Threat detected",
+            extra={
+                "threat_id": str(threat.id),
+                "severity": threat.severity.value,
+                "threat_type": threat.threat_type.value,
+                "description": threat.description[:100]
+            }
+        )
         return True
     
     async def _log_event(self, threat: ThreatEvent) -> bool:

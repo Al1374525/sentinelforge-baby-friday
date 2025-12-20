@@ -4,7 +4,7 @@ Remediation Actions API Endpoints
 from fastapi import APIRouter, Query
 from typing import List, Optional
 from app.models.remediation_action import RemediationAction, ActionType
-from app.storage import actions_db
+from app.storage import get_actions_db
 
 router = APIRouter()
 
@@ -16,6 +16,7 @@ async def list_actions(
     limit: int = Query(100, ge=1, le=1000)
 ):
     """List all remediation actions"""
+    actions_db = get_actions_db()
     filtered = actions_db
     
     if action_type:
@@ -34,6 +35,7 @@ async def get_action(action_id: str):
     
     action_id_uuid = UUID(action_id)
     
+    actions_db = get_actions_db()
     for action in actions_db:
         if action.id == action_id_uuid:
             return action

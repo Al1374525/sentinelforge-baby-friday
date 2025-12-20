@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
+import os
 
 from app.api import threats, actions, stream, explain
 from app.services.falco_processor import FalcoProcessor
@@ -13,6 +14,14 @@ from app.services.rl_service import RLService
 from app.services.ml_service import MLService
 from app.services.llm_service import LLMService
 from app.services.remediation_service import RemediationService
+from app.utils.logging import setup_logging, get_logger
+
+# Setup logging
+log_level = os.getenv("LOG_LEVEL", "INFO")
+use_json_logs = os.getenv("JSON_LOGS", "false").lower() == "true"
+setup_logging(level=log_level, use_json=use_json_logs)
+
+logger = get_logger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -47,17 +56,17 @@ app.include_router(explain.router, prefix="/api/v1", tags=["explain"])
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    print("🚀 SentinelForge backend starting...")
+    logger.info("SentinelForge backend starting...")
     await ml_service.initialize()
     await rl_service.initialize()
     await llm_service.initialize()
-    print("✅ All services initialized")
+    logger.info("All services initialized")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    print("🛑 SentinelForge backend shutting down...")
+    logger.info("SentinelForge backend shutting down...")
 
 
 @app.post("/api/v1/falco/webhook")
@@ -84,7 +93,24 @@ async def falco_webhook(request: Request):
                 await remediation_service.execute_action(action, threat)
             elif action.risk_level in ["medium", "high"]:
                 # Log for human review
-                print(f"⚠️  Action requires confirmation: {action.action_type} (confidence: {action.confidence:.2f})")
+                logger.warning(
+                    "Action requires confirmation",
+                    extra={
+                        "action_type": action.action_type.value,
+                        "confidence": action.confidence,
+                        "threat_id": str(threat.id)
+                    }
+                )
+            
+            logger.info(
+                "Threat processed",
+                extra={
+                    "threat_id": str(threat.id),
+                    "severity": threat.severity.value,
+                    "threat_type": threat.threat_type.value,
+                    "action": action.action_type.value if action else "monitor"
+                }
+            )
             
             return JSONResponse({
                 "status": "processed",
@@ -96,7 +122,11 @@ async def falco_webhook(request: Request):
         return JSONResponse({"status": "processed", "threat": None})
     
     except Exception as e:
-        print(f"❌ Error processing Falco event: {e}")
+        logger.error(
+            "Error processing Falco event",
+            extra={"error": str(e)},
+            exc_info=True
+        )
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
